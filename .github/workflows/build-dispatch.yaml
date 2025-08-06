@@ -8,9 +8,9 @@ on:
         required: true
 
 env:
-  TF_VAR_aws_region: "eu-west-2"
-  TF_VAR_aws_ami_name: '["*Ubuntu 24.04 LTS*"]'
-  TF_VAR_aws_ami_owners: '["20250730"]'
+  TF_VAR_aws_region: "eu-east-1"
+  TF_VAR_aws_ami_name: '["Ubuntu Server 24.04 LTS (HVM), SSD Volume Type"]'
+  TF_VAR_aws_ami_owners: '["099720109477"]'
   TF_VAR_aws_volume_size: 200
   TF_VAR_aws_access_key: ${{ secrets.AWS_ACCESS_KEY_ID }}
   TF_VAR_aws_secret_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
