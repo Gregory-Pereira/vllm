@@ -8,7 +8,7 @@ on:
         required: true
 
 env:
-  TF_VAR_aws_region: "eu-east-1"
+  TF_VAR_aws_region: "us-east-1"
   TF_VAR_aws_ami_name: '["Ubuntu Server 24.04 LTS (HVM), SSD Volume Type"]'
   TF_VAR_aws_ami_owners: '["099720109477"]'
   TF_VAR_aws_volume_size: 200
@@ -16,7 +16,7 @@ env:
   TF_VAR_aws_secret_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
  
 jobs:
-  build-vllm-gpu-x86_64:
+  build-vllm-gpu:
     if: github.event_name == 'workflow_dispatch'
     strategy:
       matrix:
