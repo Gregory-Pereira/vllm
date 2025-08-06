@@ -75,7 +75,7 @@ jobs:
             -i terraform-test-environment-module/hosts.ini \
             --private-key=terraform-test-environment-module/${{ steps.terraform-output.outputs.pem_filename }} \
             --extra-vars "ssh_public_key='${{ steps.terraform-output.outputs.ssh_public_key }}'" \
-            --extra-vars "python_version=3.9" \
+            --extra-vars "python_version='3.9'" \
             --extra-vars "vllm_commit='${{ github.event.inputs.vllm_commit}}"'
 
       - name: Destroy Test Environment
