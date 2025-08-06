@@ -24,9 +24,9 @@ jobs:
           - arch: amd64
             aws_image_type: g6.4xlarge
             aws_ami_architecture: x86_64
-          - arch: arm64
-            aws_image_type: g5g.4xlarge
-            aws_ami_architecture: arm64
+          # - arch: arm64
+          #   aws_image_type: g5g.4xlarge
+          #   aws_ami_architecture: arm64
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout
@@ -76,7 +76,7 @@ jobs:
             --private-key=terraform-test-environment-module/${{ steps.terraform-output.outputs.pem_filename }} \
             --extra-vars "ssh_public_key='${{ steps.terraform-output.outputs.ssh_public_key }}'" \
             --extra-vars "python_version='3.9'" \
-            --extra-vars "vllm_commit='${{ github.event.inputs.vllm_commit}}"'
+            --extra-vars "vllm_commit='${{ github.event.inputs.vllm_commit}}'"
 
       - name: Destroy Test Environment
         id: down
