@@ -1,0 +1,186 @@
+- name: Build vLLM from source
+  hosts: test_environments
+  remote_user: ubuntu
+  become: true
+  gather_facts: false
+
+  tasks:
+
+    - name: Wait until the instance is ready
+      ansible.builtin.wait_for_connection:
+      delay: 15
+      timeout: 180
+
+    - name: Gather facts for first time
+      ansible.builtin.setup:
+
+    # - name: Download SSM Agent .deb package
+    #   get_url:
+    #     url: https://s3.us-west-2.amazonaws.com/amazon-ssm-us-west-2/latest/debian_{{ arch }}/amazon-ssm-agent.deb
+    #     dest: /tmp/amazon-ssm-agent.deb
+
+    # - name: Install SSM Agent using apt
+    #   apt:
+    #     deb: /tmp/amazon-ssm-agent.deb
+    #     state: present
+
+    # - name: Install Python non-interactive
+    #   shell: |
+    #     export DEBIAN_FRONTEND=noninteractive
+    #     ln -fs /usr/share/zoneinfo/Etc/UTC /etc/localtime
+    #     apt update
+    #     apt install -y tzdata && \
+    #     dpkg-reconfigure -f noninteractive tzdata && \
+    #     apt install -y python{{ python_version }}
+    #   args:
+    #     executable: /bin/bash
+
+    - name: Install required packages
+      package:
+        name:
+          - git
+          - python{{ python_version }}-venv
+          - python{{ python_version }}-dev
+          - cmake
+          - ninja-build
+          - twine
+          # - python{{ python_version }}
+        state: present
+        update_cache: true
+
+    - name: Install SCCache
+      shell: |
+        sudo apt update
+        sudo apt install -y build-essential pkg-config libssl-dev 
+        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+        source $HOME/.cargo/env
+        cargo install sccache
+        sudo mv $HOME/.cargo/bin/sccache /usr/local/bin/sccache
+      args:
+        executable: /bin/bash
+
+    - name: Start sccache
+      shell: |
+        sudo touch /var/log/sccache_log.txt
+        mkdir -p $HOME/.config/sccache
+        touch $HOME/.config/sccache/config.toml
+        cat > $HOME/.config/sccache/config.toml <<EOF
+        [cache.s3]
+        bucket = "vllm-nightly-sccache"
+        key_prefix = "vllm-cache/"
+        endpoint = "https://s3.us-west-2.amazonaws.com"
+        use_ssl = true
+        no_credentials = false
+        region = "us-west-2"
+        EOF
+
+        mkdir -p $HOME/.aws
+        touch $HOME/.aws/credentials
+        cat > $HOME/.aws/credentials <<EOF
+        [default]
+        region = us-west-2
+        aws_access_key_id = {{ aws_access_key_id_s3_bucket_only }}
+        aws_secret_access_key = {{ aws_secret_access_key_s3_bucket_only }}
+        EOF
+
+        SCCACHE_IDLE_TIMEOUT=0 \
+        SCCACHE_ERROR_LOG=/var/log/sccache_log.txt \
+        SCCACHE_LOG=debug \
+        SCCACHE_CONF=$HOME/.config/sccache/config.toml \
+        AWS_PROFILE=default \
+        /usr/local/bin/sccache --start-server
+      args:
+        executable: /bin/bash
+
+    - name: Install cuda deps
+      shell: |
+        wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/{{ arch }}/cuda-keyring_1.1-1_all.deb
+        sudo dpkg -i cuda-keyring_1.1-1_all.deb
+        sudo apt-get update
+        sudo apt-get install -y cuda-toolkit-12-8 nvidia-open nvtop nload nvidia-cuda-toolkit
+
+    - name: Reboot
+      ansible.builtin.shell: systemctl reboot
+      ignore_errors: false
+      ignore_unreachable: false
+
+    - name: Reconnect after reboot
+      ansible.builtin.wait_for_connection:
+      delay: 45
+      timeout: 180
+
+    - name: Clone vLLM repo
+      git:
+        repo: https://github.com/vllm-project/vllm.git
+        dest: "/home/vllm"
+        version: "{{ vllm_commit }}"
+
+    - name: Create virtualenv
+      command: "python{{ python_version }} -m venv /home/vllm/venv"
+      args:
+        creates: "/home/vllm/venv/bin/activate"
+
+    - name: Install Python dependencies
+      shell: |
+        source /home/vllm/venv/bin/activate
+        /home/vllm/venv/bin/pip install --upgrade pip setuptools setuptools_scm wheel
+        /home/vllm/venv/bin/pip install -r /home/vllm/requirements/build.txt
+        # /home/vllm/venv/bin/pip install -r /home/vllm/requirements/cuda.txt
+      args:
+        executable: /bin/bash
+
+    - name: Start vLLM wheel build Async
+      shell: |
+        source /home/vllm/venv/bin/activate
+        cd /home/vllm/
+        export MAX_JOBS=$(nproc)
+        export CUDA_HOME=/usr/local/cuda
+        export PATH=$CUDA_HOME/bin:$PATH
+        export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
+        
+        export RUSTC_WRAPPER="sccache"
+        export CC="gcc"
+        export CXX="g++"
+        export SCCACHE_BUCKET=vllm-nightly-sccache
+        export SCCACHE_REGION=us-west-2 
+        export SCCACHE_IDLE_TIMEOUT=0
+        export SCCACHE_S3_KEY_PREFIX="vllm-cache/"
+
+        python setup.py bdist_wheel > /tmp/vllm-build.log 2>&1
+      args:
+        executable: /bin/bash
+    #   async: 7200
+    #   poll: 0
+    #   register: build_job
+
+    # - name: Wait for vLLM build to finish (up to 2 hours)
+    #   async_status:
+    #     jid: "{{ build_job.ansible_job_id }}"
+    #   register: job_result
+    #   until: job_result.finished
+    #   retries: 120
+    #   delay: 60
+    #   ignore_unreachable: true
+
+    - name: Build PYPIRC
+      shell: |
+        touch $HOME/.pypirc
+        cat > $HOME/.pypirc <<EOF
+        [distutils]
+        index-servers =
+            vllm-cuda-wheels
+
+        [vllm-cuda-wheels]
+        repository: https://gitlab.com/api/v4/projects/72482892/packages/pypi
+        username: __token__
+        password: {{ pypirc_token }}
+        EOF
+        chmod 600 $HOME/.pypirc
+      args:
+        executable: /bin/bash
+    
+    - name: Twine Upload
+      shell: |
+        twine upload /home/vllm/dist/*
+
+
