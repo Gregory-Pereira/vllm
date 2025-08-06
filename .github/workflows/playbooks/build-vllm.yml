@@ -1,0 +1,63 @@
+- name: Build vLLM from source
+  hosts: test_environments
+  remote_user: ec2-user
+  become: true
+  gather_facts: false
+
+  tasks:
+
+    - name: Wait until the instance is ready
+      ansible.builtin.wait_for_connection:
+      delay: 15
+      timeout: 180
+
+    - name: Gather facts for first time
+      ansible.builtin.setup:
+
+    - name: Required packages
+      ansible.builtin.dnf:
+      name:
+      - https://s3.eu-west-2.amazonaws.com/amazon-ssm-eu-west-2/latest/linux_amd64/amazon-ssm-agent.rpm
+      - podman
+      state: present
+      disable_gpg_check: true
+
+    - name: Install required packages
+      apt:
+        name:
+          - git
+          - python{{ python_version }}-dev
+          - python{{ python_version }}-venv
+          - build-essential
+          - cmake
+          - ninja-build
+          - libgoogle-perftools-dev
+        state: present
+        update_cache: true
+
+    - name: Clone vLLM repo
+      git:
+        repo: https://github.com/vllm-project/vllm.git
+        dest: "/home"
+        version: "{{ vllm_commit }}"
+
+    - name: Create virtualenv
+      command: "python{{ python_version }} -m venv /home/vllm/venv"
+      args:
+        creates: "/home/vllm/venv/bin/activate"
+
+    - name: Install Python dependencies
+      shell: |
+        source /home/vllm/venv/bin/activate
+        pip install --upgrade pip setuptools wheel
+      args:
+        executable: /bin/bash
+
+    - name: Build vLLM wheel
+      shell: |
+        source /home/vllm/venv/bin/activate
+        cd /home/vllm/
+        python setup.py bdist_wheel
+      args:
+        executable: /bin/bash
+
