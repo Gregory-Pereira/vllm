@@ -680,7 +680,21 @@ def filter_duplicate_safetensors_files(
     weight_files_in_index = set()
     for weight_name in weight_map:
         weight_files_in_index.add(os.path.join(hf_folder, weight_map[weight_name]))
-    # Filter out any fields that are not found in the index file.
+
+    # Check if the index file is stale (references files that don't exist).
+    # This can happen when a model is re-saved as a single unsharded
+    # model.safetensors but the old index still references sharded files.
+    if not any(os.path.isfile(f) for f in weight_files_in_index):
+        logger.warning(
+            "The model weight index file (%s) references files that don't "
+            "exist on disk. Ignoring the index and using discovered weight "
+            "files instead. This can happen when a sharded model is "
+            "consolidated into a single file without updating the index.",
+            index_file_name,
+        )
+        return hf_weights_files
+
+    # Filter out any files that are not found in the index file.
     hf_weights_files = [f for f in hf_weights_files if f in weight_files_in_index]
     return hf_weights_files
 

@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
+import json
 import os
 import tempfile
 
@@ -11,6 +12,7 @@ from huggingface_hub.utils import LocalEntryNotFoundError
 from vllm.model_executor.model_loader.weight_utils import (
     download_weights_from_hf,
     enable_hf_transfer,
+    filter_duplicate_safetensors_files,
     maybe_remap_kv_scale_name,
 )
 
@@ -175,6 +177,73 @@ class TestMaybeRemapKvScaleName:
             "model.layers.0.self_attn.qkv_proj.k_scale", empty_params
         )
         assert result is None
+
+
+class TestFilterDuplicateSafetensorsFiles:
+    """Tests for filter_duplicate_safetensors_files."""
+
+    def test_no_index_file_returns_all(self):
+        """When no index file exists, all files should be returned."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            weight_file = os.path.join(tmpdir, "model.safetensors")
+            open(weight_file, "w").close()
+            result = filter_duplicate_safetensors_files(
+                [weight_file], tmpdir, "model.safetensors.index.json"
+            )
+            assert result == [weight_file]
+
+    def test_valid_index_filters_correctly(self):
+        """When the index references files that exist, filter works."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            shard1 = os.path.join(tmpdir, "model-00001-of-00002.safetensors")
+            shard2 = os.path.join(tmpdir, "model-00002-of-00002.safetensors")
+            extra = os.path.join(tmpdir, "consolidated.safetensors")
+            for path in [shard1, shard2, extra]:
+                open(path, "w").close()
+
+            index = {
+                "weight_map": {
+                    "layer.0.weight": "model-00001-of-00002.safetensors",
+                    "layer.1.weight": "model-00002-of-00002.safetensors",
+                }
+            }
+            index_path = os.path.join(tmpdir, "model.safetensors.index.json")
+            with open(index_path, "w") as fp:
+                json.dump(index, fp)
+
+            result = filter_duplicate_safetensors_files(
+                [shard1, shard2, extra],
+                tmpdir,
+                "model.safetensors.index.json",
+            )
+            assert sorted(result) == sorted([shard1, shard2])
+
+    def test_stale_index_returns_all_files(self):
+        """When the index references files that don't exist (stale index),
+        all discovered files should be returned.
+
+        Regression test for https://github.com/vllm-project/vllm/issues/38829
+        """
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Single unsharded file exists
+            weight_file = os.path.join(tmpdir, "model.safetensors")
+            open(weight_file, "w").close()
+
+            # Stale index still references old sharded files
+            index = {
+                "weight_map": {
+                    "layer.0.weight": "model-00001-of-00002.safetensors",
+                    "layer.1.weight": "model-00002-of-00002.safetensors",
+                }
+            }
+            index_path = os.path.join(tmpdir, "model.safetensors.index.json")
+            with open(index_path, "w") as fp:
+                json.dump(index, fp)
+
+            result = filter_duplicate_safetensors_files(
+                [weight_file], tmpdir, "model.safetensors.index.json"
+            )
+            assert result == [weight_file]
 
 
 if __name__ == "__main__":
