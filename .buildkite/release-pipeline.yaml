@@ -85,6 +85,24 @@ steps:
     env:
       DOCKER_BUILDKIT: "1"
 
+  - label: "Build and publish devcontainer image"
+    depends_on: ~
+    if: >
+      build.env("NIGHTLY") == "1" ||
+      build.message =~ /devcontainer/
+    agents:
+      queue: cpu_queue_postmerge
+    commands:
+      - "DOCKER_BUILDKIT=1 docker build --build-arg CUDA_VERSION=12.8.1 --tag vllm/vllm-devcontainer:latest --tag vllm/vllm-devcontainer:$BUILDKITE_COMMIT --progress plain -f .devcontainer/Dockerfile ."
+      - "docker push vllm/vllm-devcontainer:latest"
+      - "docker push vllm/vllm-devcontainer:$BUILDKITE_COMMIT"
+    plugins:
+      - docker-login#v3.0.0:
+          username: vllmbot
+          password-env: DOCKERHUB_TOKEN
+    env:
+      DOCKER_BUILDKIT: "1"
+
   - input: "Provide Release version here"
     id: input-release-version
     fields:

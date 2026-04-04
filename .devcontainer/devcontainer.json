@@ -1,0 +1,39 @@
+{
+  "name": "vLLM Dev",
+  "dockerFile": "Dockerfile",
+  "context": "..",
+  "build": {
+    "args": {
+      "CUDA_VERSION": "12.8.1",
+      "PYTHON_VERSION": "3.12"
+    }
+  },
+  "runArgs": [
+    "--gpus", "all",
+    "--shm-size", "16g"
+  ],
+  "workspaceMount": "source=${localWorkspaceFolder},target=/workspace/vllm,type=bind",
+  "workspaceFolder": "/workspace/vllm",
+  "remoteUser": "vllm-dev",
+  "postStartCommand": "pip install -e . 2>&1 | tail -5",
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "python.defaultInterpreterPath": "/usr/bin/python3",
+        "python.analysis.typeCheckingMode": "basic",
+        "editor.formatOnSave": true,
+        "[python]": {
+          "editor.defaultFormatter": "charliermarsh.ruff"
+        }
+      },
+      "extensions": [
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "charliermarsh.ruff",
+        "ms-toolsai.jupyter",
+        "ms-vscode.cpptools",
+        "ms-kubernetes-tools.vscode-kubernetes-tools"
+      ]
+    }
+  }
+}
