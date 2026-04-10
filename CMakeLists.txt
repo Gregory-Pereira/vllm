@@ -202,6 +202,15 @@ if(VLLM_GPU_LANG STREQUAL "CUDA")
   if(CUDA_VERSION VERSION_GREATER_EQUAL 13.0)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -I${CUDA_TOOLKIT_ROOT_DIR}/include/cccl")
   endif()
+
+  # Ensure find_package(CUDAToolkit) finds the same CUDA installation that
+  # Torch configured via the legacy FindCUDA module. Without this hint the two
+  # modules can disagree when multiple CUDA versions coexist (e.g. CUDA 12 and
+  # CUDA 13), causing extensions like deep_gemm to link against the wrong
+  # cudart / nvrtc.
+  if(CUDA_TOOLKIT_ROOT_DIR AND NOT CUDAToolkit_ROOT)
+    set(CUDAToolkit_ROOT "${CUDA_TOOLKIT_ROOT_DIR}")
+  endif()
 endif()
 
 #
