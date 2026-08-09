@@ -589,6 +589,7 @@ def _make_bootstrap_vllm_config(
     local_engines_only: bool = False,
     data_parallel_rank_local: int = 0,
     data_parallel_index: int = 0,
+    data_parallel_start_rank: int | None = None,
     nnodes_within_dp: int = 1,
 ) -> SimpleNamespace:
     return SimpleNamespace(
@@ -596,6 +597,7 @@ def _make_bootstrap_vllm_config(
             local_engines_only=local_engines_only,
             data_parallel_rank_local=data_parallel_rank_local,
             data_parallel_index=data_parallel_index,
+            data_parallel_start_rank=data_parallel_start_rank,
             nnodes_within_dp=nnodes_within_dp,
             master_addr="model-parallel-master",
             data_parallel_master_ip="data-parallel-master",
@@ -654,6 +656,54 @@ def test_should_launch_bootstrap_server_selects_single_owner(
         ) as mock_pp_group,
     ):
         mock_pp_group.return_value.rank_in_group = pp_rank
+        assert should_launch_bootstrap_server(vllm_config) is expected
+
+
+@pytest.mark.parametrize(
+    ("data_parallel_index", "data_parallel_start_rank", "expected"),
+    [
+        (0, 0, True),
+        (1, 0, False),
+        (7, 0, False),
+        (8, 8, True),
+        (9, 8, False),
+        (15, 8, False),
+    ],
+    ids=[
+        "node0_first_child_launches",
+        "node0_second_child_skips",
+        "node0_last_child_skips",
+        "node1_first_child_launches",
+        "node1_second_child_skips",
+        "node1_last_child_skips",
+    ],
+)
+def test_should_launch_bootstrap_server_supervised_external_lb(
+    data_parallel_index: int,
+    data_parallel_start_rank: int,
+    expected: bool,
+):
+    """Supervised external-LB sets data_parallel_size_local=1 for each child,
+    so data_parallel_rank_local is always 0. The bootstrap server must be
+    elected using data_parallel_start_rank instead."""
+    vllm_config = _make_bootstrap_vllm_config(
+        local_engines_only=True,
+        data_parallel_rank_local=0,
+        data_parallel_index=data_parallel_index,
+        data_parallel_start_rank=data_parallel_start_rank,
+    )
+    with (
+        patch(
+            "vllm.distributed.kv_transfer.kv_connector.v1.mooncake."
+            "mooncake_connector.get_tensor_model_parallel_rank",
+            return_value=0,
+        ),
+        patch(
+            "vllm.distributed.kv_transfer.kv_connector.v1.mooncake."
+            "mooncake_connector.get_pp_group"
+        ) as mock_pp_group,
+    ):
+        mock_pp_group.return_value.rank_in_group = 0
         assert should_launch_bootstrap_server(vllm_config) is expected
 
 
