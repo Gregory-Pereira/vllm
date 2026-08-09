@@ -962,9 +962,7 @@ class MooncakeConnectorWorker:
         self.seen_base_addresses: list[int] = []
 
         assert (parallel_config := vllm_config.parallel_config)
-        dp_rank = parallel_config.data_parallel_index
-        dp_local_rank = parallel_config.data_parallel_rank_local
-        self.dp_rank = dp_local_rank if parallel_config.local_engines_only else dp_rank
+        self.dp_rank = parallel_config.data_parallel_index
         self.pp_size = vllm_config.parallel_config.pipeline_parallel_size
         self.pp_rank = get_pp_group().rank_in_group
 
